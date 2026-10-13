@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 
 const OPTIONS = [
@@ -41,7 +41,43 @@ const MENU = [
   },
 ]
 
+const INVENTORY_MENU = MENU
+const DEFAULT_INVENTORY = Object.fromEntries(
+  INVENTORY_MENU.map((menu) => [menu.id, 10]),
+)
+
 const formatPrice = (price) => `${price.toLocaleString('ko-KR')}원`
+
+function readOrders() {
+  const savedOrders = localStorage.getItem('cozy-orders')
+  if (!savedOrders) return []
+
+  const orders = JSON.parse(savedOrders)
+  if (!Array.isArray(orders)) {
+    throw new Error('저장된 주문 정보를 읽을 수 없습니다.')
+  }
+  return orders
+}
+
+function readInventory() {
+  const savedInventory = localStorage.getItem('cozy-inventory')
+  if (!savedInventory) return DEFAULT_INVENTORY
+
+  const inventory = JSON.parse(savedInventory)
+  if (
+    !inventory ||
+    typeof inventory !== 'object' ||
+    Array.isArray(inventory) ||
+    INVENTORY_MENU.some(
+      (menu) =>
+        inventory[menu.id] !== undefined &&
+        (!Number.isInteger(inventory[menu.id]) || inventory[menu.id] < 0),
+    )
+  ) {
+    throw new Error('저장된 재고 정보를 읽을 수 없습니다.')
+  }
+  return { ...DEFAULT_INVENTORY, ...inventory }
+}
 
 function createOrderId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -49,6 +85,16 @@ function createOrderId() {
 
 function getCurrentTimestamp() {
   return new Date().toISOString()
+}
+
+function formatOrderDate(timestamp) {
+  return new Date(timestamp).toLocaleString('ko-KR', {
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 }
 
 function CoffeeIllustration({ art }) {
@@ -93,15 +139,54 @@ function CoffeeIllustration({ art }) {
 }
 
 function App() {
+  const [view, setView] = useState(
+    window.location.hash === '#admin' ? 'admin' : 'order',
+  )
   const [selectedOptions, setSelectedOptions] = useState({})
   const [cart, setCart] = useState([])
   const [notice, setNotice] = useState(null)
+  const [orders, setOrders] = useState([])
+  const [inventory, setInventory] = useState(DEFAULT_INVENTORY)
 
   const cartTotal = cart.reduce(
     (total, item) => total + item.unitPrice * item.quantity,
     0,
   )
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0)
+
+  useEffect(() => {
+    function syncView() {
+      setView(window.location.hash === '#admin' ? 'admin' : 'order')
+      try {
+        setOrders(readOrders())
+      } catch (error) {
+        const reason =
+          error instanceof Error ? error.message : '알 수 없는 오류가 발생했어요.'
+        setNotice({ type: 'error', text: reason })
+      }
+    }
+
+    function syncStorage(event) {
+      try {
+        if (!event || event.key === 'cozy-orders') setOrders(readOrders())
+        if (!event || event.key === 'cozy-inventory') {
+          setInventory(readInventory())
+        }
+      } catch (error) {
+        const reason =
+          error instanceof Error ? error.message : '알 수 없는 오류가 발생했어요.'
+        setNotice({ type: 'error', text: reason })
+      }
+    }
+
+    window.addEventListener('hashchange', syncView)
+    window.addEventListener('storage', syncStorage)
+    syncStorage()
+    return () => {
+      window.removeEventListener('hashchange', syncView)
+      window.removeEventListener('storage', syncStorage)
+    }
+  }, [])
 
   function toggleOption(menuId, optionId) {
     setSelectedOptions((current) => {
@@ -160,11 +245,7 @@ function App() {
     if (cart.length === 0) return
 
     try {
-      const savedOrders = localStorage.getItem('cozy-orders')
-      const orders = savedOrders ? JSON.parse(savedOrders) : []
-      if (!Array.isArray(orders)) {
-        throw new Error('저장된 주문 정보를 읽을 수 없습니다.')
-      }
+      const currentOrders = readOrders()
 
       const order = {
         id: createOrderId(),
@@ -185,7 +266,9 @@ function App() {
         totalPrice: cartTotal,
       }
 
-      localStorage.setItem('cozy-orders', JSON.stringify([...orders, order]))
+      const updatedOrders = [...currentOrders, order]
+      localStorage.setItem('cozy-orders', JSON.stringify(updatedOrders))
+      setOrders(updatedOrders)
       setCart([])
       setSelectedOptions({})
       setNotice({ type: 'success', text: '주문이 완료되었어요. 감사합니다!' })
@@ -199,6 +282,45 @@ function App() {
     }
   }
 
+  function changeOrderStatus(orderId) {
+    const updatedOrders = orders.map((order) => {
+      if (order.id !== orderId) return order
+      const nextStatus =
+        order.status === '주문 접수'
+          ? '제조 중'
+          : order.status === '제조 중'
+            ? '제조 완료'
+            : order.status
+      return { ...order, status: nextStatus }
+    })
+
+    try {
+      localStorage.setItem('cozy-orders', JSON.stringify(updatedOrders))
+      setOrders(updatedOrders)
+      setNotice({ type: 'success', text: '주문 상태를 변경했어요.' })
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : '알 수 없는 오류가 발생했어요.'
+      setNotice({ type: 'error', text: `주문 상태를 저장하지 못했어요. (${reason})` })
+    }
+  }
+
+  function changeInventory(menuId, amount) {
+    const nextQuantity = inventory[menuId] + amount
+    if (nextQuantity < 0) return
+
+    const updatedInventory = { ...inventory, [menuId]: nextQuantity }
+    try {
+      localStorage.setItem('cozy-inventory', JSON.stringify(updatedInventory))
+      setInventory(updatedInventory)
+      setNotice({ type: 'success', text: '재고 수량을 변경했어요.' })
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : '알 수 없는 오류가 발생했어요.'
+      setNotice({ type: 'error', text: `재고를 저장하지 못했어요. (${reason})` })
+    }
+  }
+
   return (
     <div className="page-shell">
       <header className="topbar">
@@ -206,42 +328,238 @@ function App() {
           COZY<span className="brand__dot">.</span>
         </a>
         <nav className="topbar__nav" aria-label="주요 메뉴">
-          <a className="topbar__link topbar__link--active" href="#menu">
+          <a
+            className={`topbar__link${view === 'order' ? ' topbar__link--active' : ''}`}
+            href="#menu"
+            aria-current={view === 'order' ? 'page' : undefined}
+          >
             주문하기
           </a>
           <a
-            className="topbar__link"
+            className={`topbar__link${view === 'admin' ? ' topbar__link--active' : ''}`}
             href="#admin"
-            onClick={(event) => {
-              event.preventDefault()
-              setNotice({
-                type: 'info',
-                text: '관리자 화면은 다음 단계에서 준비할게요.',
-              })
-            }}
+            aria-current={view === 'admin' ? 'page' : undefined}
           >
             관리자
           </a>
         </nav>
-        <a className="topbar__cart" href="#cart" aria-label={`장바구니 ${cartCount}개`}>
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M4 8h16l-1.4 12H5.4L4 8Z"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M9 9V6a3 3 0 0 1 6 0v3"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-            />
-          </svg>
-          {cartCount > 0 && <span className="topbar__cart-count">{cartCount}</span>}
-        </a>
+        {view === 'order' && (
+          <a
+            className="topbar__cart"
+            href="#cart"
+            aria-label={`장바구니 ${cartCount}개`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M4 8h16l-1.4 12H5.4L4 8Z"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M9 9V6a3 3 0 0 1 6 0v3"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+              />
+            </svg>
+            {cartCount > 0 && <span className="topbar__cart-count">{cartCount}</span>}
+          </a>
+        )}
       </header>
 
+      {view === 'admin' ? (
+        <main id="top" className="admin-content">
+          <section className="admin-heading" aria-labelledby="admin-title">
+            <div>
+              <p className="eyebrow">COZY STORE MANAGEMENT</p>
+              <h1 id="admin-title">관리자 대시보드</h1>
+            </div>
+          </section>
+
+          {notice && (
+            <div
+              className={`notice notice--${notice.type}`}
+              role={notice.type === 'error' ? 'alert' : 'status'}
+            >
+              <span>{notice.text}</span>
+              <button
+                className="notice__close"
+                type="button"
+                aria-label="안내 닫기"
+                onClick={() => setNotice(null)}
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          <section className="admin-section" aria-labelledby="dashboard-title">
+            <div className="admin-section__heading">
+              <div>
+                <p className="eyebrow">AT A GLANCE</p>
+                <h2 id="dashboard-title">관리자 대시보드</h2>
+              </div>
+              <span className="admin-section__meta">TODAY</span>
+            </div>
+            <div className="dashboard-grid">
+              {[
+                { label: '총 주문', count: orders.length, tone: 'total' },
+                {
+                  label: '주문 접수',
+                  count: orders.filter((order) => order.status === '주문 접수').length,
+                  tone: 'received',
+                },
+                {
+                  label: '제조 중',
+                  count: orders.filter((order) => order.status === '제조 중').length,
+                  tone: 'making',
+                },
+                {
+                  label: '제조 완료',
+                  count: orders.filter((order) => order.status === '제조 완료').length,
+                  tone: 'complete',
+                },
+              ].map((stat) => (
+                <article
+                  className={`dashboard-card dashboard-card--${stat.tone}`}
+                  key={stat.label}
+                >
+                  <span className="dashboard-card__label">{stat.label}</span>
+                  <strong className="dashboard-card__count">{stat.count}</strong>
+                  <span className="dashboard-card__unit">건</span>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="admin-section" aria-labelledby="inventory-title">
+            <div className="admin-section__heading">
+              <div>
+                <p className="eyebrow">STOCK CONTROL</p>
+                <h2 id="inventory-title">재고 현황</h2>
+              </div>
+              <span className="admin-section__meta">
+                {INVENTORY_MENU.length} MENUS
+              </span>
+            </div>
+            <div className="inventory-grid">
+              {INVENTORY_MENU.map((menu) => {
+                const quantity = inventory[menu.id]
+                const stockStatus =
+                  quantity === 0
+                    ? 'soldout'
+                    : quantity < 5
+                      ? 'warning'
+                      : 'normal'
+                const stockLabel =
+                  stockStatus === 'soldout'
+                    ? '품절'
+                    : stockStatus === 'warning'
+                      ? '주의'
+                      : '정상'
+
+                return (
+                  <article className="inventory-card" key={menu.id}>
+                    <div className="inventory-card__top">
+                      <span className="inventory-card__category">COFFEE</span>
+                      <span className={`stock-badge stock-badge--${stockStatus}`}>
+                        {stockLabel}
+                      </span>
+                    </div>
+                    <h3>{menu.name}</h3>
+                    <div className="inventory-card__quantity">
+                      <strong>{quantity}</strong>
+                      <span>개 남음</span>
+                    </div>
+                    <div className="inventory-card__controls">
+                      <button
+                        className="inventory-control"
+                        type="button"
+                        aria-label={`${menu.name} 재고 늘리기`}
+                        onClick={() => changeInventory(menu.id, 1)}
+                      >
+                        +
+                      </button>
+                      <button
+                        className="inventory-control"
+                        type="button"
+                        aria-label={`${menu.name} 재고 줄이기`}
+                        disabled={quantity === 0}
+                        onClick={() => changeInventory(menu.id, -1)}
+                      >
+                        −
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="admin-section orders-section" aria-labelledby="orders-title">
+            <div className="admin-section__heading">
+              <div>
+                <p className="eyebrow">LIVE ORDER QUEUE</p>
+                <h2 id="orders-title">주문 현황</h2>
+              </div>
+              <span className="admin-section__meta">{orders.length} ORDERS</span>
+            </div>
+            {orders.length === 0 ? (
+              <div className="admin-empty">
+                <span className="admin-empty__icon" aria-hidden="true">☕</span>
+                <strong>아직 접수된 주문이 없어요.</strong>
+                <span>새 주문이 들어오면 이곳에서 확인할 수 있어요.</span>
+              </div>
+            ) : (
+              <ul className="order-list">
+                {[...orders].reverse().map((order) => (
+                  <li className="order-row" key={order.id}>
+                    <div className="order-row__date">
+                      <span>{formatOrderDate(order.createdAt)}</span>
+                      <span className="order-row__number">
+                        ORDER #{String(order.id).slice(-6)}
+                      </span>
+                    </div>
+                    <div className="order-row__items">
+                      {order.items.map((item) => (
+                        <span
+                          key={`${order.id}-${item.menuId}-${item.options?.map((option) => option.id).join(',') ?? 'basic'}`}
+                        >
+                          {item.name} <b>× {item.quantity}</b>
+                          {item.options?.length > 0 && (
+                            <small>
+                              {item.options.map((option) => option.name).join(' · ')}
+                            </small>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                    <strong className="order-row__total">
+                      {formatPrice(order.totalPrice)}
+                    </strong>
+                    <span className={`order-status order-status--${order.status === '제조 중' ? 'making' : order.status === '제조 완료' ? 'complete' : 'received'}`}>
+                      {order.status}
+                    </span>
+                    {order.status !== '제조 완료' ? (
+                      <button
+                        className="button button--primary order-row__action"
+                        type="button"
+                        onClick={() => changeOrderStatus(order.id)}
+                      >
+                        {order.status === '주문 접수' ? '제조 시작' : '제조 완료'}
+                        <span aria-hidden="true">→</span>
+                      </button>
+                    ) : (
+                      <span className="order-row__done">처리 완료</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </main>
+      ) : (
       <main id="top" className="main-content">
         <section className="intro" aria-labelledby="menu-title">
           <div>
@@ -409,6 +727,7 @@ function App() {
           </aside>
         </section>
       </main>
+      )}
 
       <footer className="footer">
         <a className="footer__brand" href="#top">
