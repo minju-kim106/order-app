@@ -1,0 +1,18 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Vite 개발 서버",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"--prefix",
+				"ui",
+				"run",
+				"dev"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}
