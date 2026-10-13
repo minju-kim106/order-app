@@ -1,4 +1,10 @@
 import { useEffect, useState } from 'react'
+import {
+  calculateCartTotal,
+  getNextOrderStatus,
+  getStockStatus,
+  summarizeOrders,
+} from './orderUtils.js'
 import './App.css'
 
 const OPTIONS = [
@@ -148,11 +154,9 @@ function App() {
   const [orders, setOrders] = useState([])
   const [inventory, setInventory] = useState(DEFAULT_INVENTORY)
 
-  const cartTotal = cart.reduce(
-    (total, item) => total + item.unitPrice * item.quantity,
-    0,
-  )
+  const cartTotal = calculateCartTotal(cart)
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0)
+  const orderCounts = summarizeOrders(orders)
 
   useEffect(() => {
     function syncView() {
@@ -285,13 +289,7 @@ function App() {
   function changeOrderStatus(orderId) {
     const updatedOrders = orders.map((order) => {
       if (order.id !== orderId) return order
-      const nextStatus =
-        order.status === '주문 접수'
-          ? '제조 중'
-          : order.status === '제조 중'
-            ? '제조 완료'
-            : order.status
-      return { ...order, status: nextStatus }
+      return { ...order, status: getNextOrderStatus(order.status) }
     })
 
     try {
@@ -400,26 +398,14 @@ function App() {
                 <p className="eyebrow">AT A GLANCE</p>
                 <h2 id="dashboard-title">관리자 대시보드</h2>
               </div>
-              <span className="admin-section__meta">TODAY</span>
+              <span className="admin-section__meta">ALL TIME</span>
             </div>
             <div className="dashboard-grid">
               {[
-                { label: '총 주문', count: orders.length, tone: 'total' },
-                {
-                  label: '주문 접수',
-                  count: orders.filter((order) => order.status === '주문 접수').length,
-                  tone: 'received',
-                },
-                {
-                  label: '제조 중',
-                  count: orders.filter((order) => order.status === '제조 중').length,
-                  tone: 'making',
-                },
-                {
-                  label: '제조 완료',
-                  count: orders.filter((order) => order.status === '제조 완료').length,
-                  tone: 'complete',
-                },
+                { label: '총 주문', count: orderCounts.total, tone: 'total' },
+                { label: '주문 접수', count: orderCounts.received, tone: 'received' },
+                { label: '제조 중', count: orderCounts.making, tone: 'making' },
+                { label: '제조 완료', count: orderCounts.complete, tone: 'complete' },
               ].map((stat) => (
                 <article
                   className={`dashboard-card dashboard-card--${stat.tone}`}
@@ -446,18 +432,8 @@ function App() {
             <div className="inventory-grid">
               {INVENTORY_MENU.map((menu) => {
                 const quantity = inventory[menu.id]
-                const stockStatus =
-                  quantity === 0
-                    ? 'soldout'
-                    : quantity < 5
-                      ? 'warning'
-                      : 'normal'
-                const stockLabel =
-                  stockStatus === 'soldout'
-                    ? '품절'
-                    : stockStatus === 'warning'
-                      ? '주의'
-                      : '정상'
+                const { key: stockStatus, label: stockLabel } =
+                  getStockStatus(quantity)
 
                 return (
                   <article className="inventory-card" key={menu.id}>
