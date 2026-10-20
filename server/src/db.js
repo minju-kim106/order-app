@@ -37,11 +37,22 @@ export async function initializeDatabase(database = pool) {
   await database.query(
     `INSERT INTO menus (name, description, price, image_url, stock_quantity)
      VALUES
-       ('아메리카노 (ICE)', '산뜻한 산미와 깔끔한 여운의 시그니처 블렌드', 4000, '', 10),
-       ('아메리카노 (HOT)', '고소한 향을 따뜻하게 즐기는 클래식 커피', 4000, '', 10),
-       ('카페라떼', '부드러운 우유와 에스프레소의 균형', 5000, '', 10),
-       ('바닐라 라떼', '은은한 바닐라 향을 더한 달콤한 라떼', 5500, '', 10)
+       ('아메리카노 (ICE)', '산뜻한 산미와 깔끔한 여운의 시그니처 블렌드', 4000, '/images/아이스아메리카노.png', 10),
+       ('아메리카노 (HOT)', '고소한 향을 따뜻하게 즐기는 클래식 커피', 4000, '/images/뜨거운아메리카노.jpg', 10),
+       ('카페라떼', '부드러운 우유와 에스프레소의 균형', 5000, '/images/카페라떼.jpg', 10),
+       ('바닐라 라떼', '은은한 바닐라 향을 더한 달콤한 라떼', 5500, '/images/바닐라라테.jpg', 10)
      ON CONFLICT (name) DO NOTHING`,
+  );
+  await database.query(
+    `UPDATE menus
+     SET image_url = CASE name
+       WHEN '아메리카노 (ICE)' THEN '/images/아이스아메리카노.png'
+       WHEN '아메리카노 (HOT)' THEN '/images/뜨거운아메리카노.jpg'
+       WHEN '카페라떼' THEN '/images/카페라떼.jpg'
+       WHEN '바닐라 라떼' THEN '/images/바닐라라테.jpg'
+       ELSE image_url
+     END
+     WHERE name IN ('아메리카노 (ICE)', '아메리카노 (HOT)', '카페라떼', '바닐라 라떼')`,
   );
   await database.query(
     `INSERT INTO options (menu_id, name, price)
