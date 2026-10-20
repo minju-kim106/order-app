@@ -1,6 +1,6 @@
 import "dotenv/config";
 import app from "./app.js";
-import pool, { validateDatabaseConfig } from "./db.js";
+import pool, { initializeDatabase, validateDatabaseConfig } from "./db.js";
 
 const port = Number(process.env.PORT ?? 3000);
 
@@ -9,6 +9,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 validateDatabaseConfig();
+await initializeDatabase(pool);
 await pool.query("SELECT 1");
 
 app.listen(port, () => {

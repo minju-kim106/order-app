@@ -271,6 +271,19 @@
   background: #eaf0f7;
 }
 
+.menu-card__photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.menu-loading {
+  grid-column: 1 / -1;
+  margin: 8px 0;
+  color: #717b88;
+  text-align: center;
+}
+
 .menu-card__index,
 .menu-card__tag {
   position: absolute;
@@ -550,6 +563,13 @@
   background: #f2f7fd;
 }
 
+.button--outline:disabled {
+  border-color: #e2e5e9;
+  color: #939ba5;
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
 .button--primary {
   color: #fff;
   background: #2868bb;
@@ -817,6 +837,28 @@
   color: #9aa3af;
   font-size: 0.65rem;
   letter-spacing: 0.12em;
+}
+
+.admin-section__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-refresh {
+  padding: 7px 10px;
+  border: 1px solid #d8e1eb;
+  border-radius: 5px;
+  color: #31577e;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.admin-refresh:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .dashboard-grid {

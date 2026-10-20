@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react'
 import {
+  createOrder as submitOrderRequest,
+  getAdminMenus,
+  getAdminOrders,
+  getMenus,
+  updateMenuStock,
+  updateOrderStatus,
+} from './api.js'
+import {
   calculateCartTotal,
   getNextOrderStatus,
   getStockStatus,
@@ -7,91 +15,7 @@ import {
 } from './orderUtils.js'
 import './App.css'
 
-const OPTIONS = [
-  { id: 'shot', name: '샷 추가', price: 500 },
-  { id: 'syrup', name: '시럽 추가', price: 0 },
-]
-
-const MENU = [
-  {
-    id: 'iced-americano',
-    name: '아메리카노 (ICE)',
-    price: 4000,
-    description: '산뜻한 산미와 깔끔한 여운의 시그니처 블렌드',
-    note: 'BEST',
-    art: 'americano',
-  },
-  {
-    id: 'hot-americano',
-    name: '아메리카노 (HOT)',
-    price: 4000,
-    description: '고소한 향을 따뜻하게 즐기는 클래식 커피',
-    note: 'CLASSIC',
-    art: 'hot',
-  },
-  {
-    id: 'cafe-latte',
-    name: '카페라떼',
-    price: 5000,
-    description: '부드러운 우유와 에스프레소의 균형',
-    note: 'MILK',
-    art: 'latte',
-  },
-  {
-    id: 'vanilla-latte',
-    name: '바닐라 라떼',
-    price: 5500,
-    description: '은은한 바닐라 향을 더한 달콤한 라떼',
-    note: 'SWEET',
-    art: 'vanilla',
-  },
-]
-
-const INVENTORY_MENU = MENU
-const DEFAULT_INVENTORY = Object.fromEntries(
-  INVENTORY_MENU.map((menu) => [menu.id, 10]),
-)
-
 const formatPrice = (price) => `${price.toLocaleString('ko-KR')}원`
-
-function readOrders() {
-  const savedOrders = localStorage.getItem('cozy-orders')
-  if (!savedOrders) return []
-
-  const orders = JSON.parse(savedOrders)
-  if (!Array.isArray(orders)) {
-    throw new Error('저장된 주문 정보를 읽을 수 없습니다.')
-  }
-  return orders
-}
-
-function readInventory() {
-  const savedInventory = localStorage.getItem('cozy-inventory')
-  if (!savedInventory) return DEFAULT_INVENTORY
-
-  const inventory = JSON.parse(savedInventory)
-  if (
-    !inventory ||
-    typeof inventory !== 'object' ||
-    Array.isArray(inventory) ||
-    INVENTORY_MENU.some(
-      (menu) =>
-        inventory[menu.id] !== undefined &&
-        (!Number.isInteger(inventory[menu.id]) || inventory[menu.id] < 0),
-    )
-  ) {
-    throw new Error('저장된 재고 정보를 읽을 수 없습니다.')
-  }
-  return { ...DEFAULT_INVENTORY, ...inventory }
-}
-
-function createOrderId() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function getCurrentTimestamp() {
-  return new Date().toISOString()
-}
 
 function formatOrderDate(timestamp) {
   return new Date(timestamp).toLocaleString('ko-KR', {
@@ -151,8 +75,13 @@ function App() {
   const [selectedOptions, setSelectedOptions] = useState({})
   const [cart, setCart] = useState([])
   const [notice, setNotice] = useState(null)
+  const [menus, setMenus] = useState([])
+  const [adminMenus, setAdminMenus] = useState([])
   const [orders, setOrders] = useState([])
-  const [inventory, setInventory] = useState(DEFAULT_INVENTORY)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [refreshCount, setRefreshCount] = useState(0)
+  const [loadedKey, setLoadedKey] = useState(null)
+  const isLoading = loadedKey !== `${view}:${refreshCount}`
 
   const cartTotal = calculateCartTotal(cart)
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0)
@@ -161,36 +90,44 @@ function App() {
   useEffect(() => {
     function syncView() {
       setView(window.location.hash === '#admin' ? 'admin' : 'order')
-      try {
-        setOrders(readOrders())
-      } catch (error) {
-        const reason =
-          error instanceof Error ? error.message : '알 수 없는 오류가 발생했어요.'
-        setNotice({ type: 'error', text: reason })
-      }
-    }
-
-    function syncStorage(event) {
-      try {
-        if (!event || event.key === 'cozy-orders') setOrders(readOrders())
-        if (!event || event.key === 'cozy-inventory') {
-          setInventory(readInventory())
-        }
-      } catch (error) {
-        const reason =
-          error instanceof Error ? error.message : '알 수 없는 오류가 발생했어요.'
-        setNotice({ type: 'error', text: reason })
-      }
     }
 
     window.addEventListener('hashchange', syncView)
-    window.addEventListener('storage', syncStorage)
-    syncStorage()
-    return () => {
-      window.removeEventListener('hashchange', syncView)
-      window.removeEventListener('storage', syncStorage)
-    }
+    return () => window.removeEventListener('hashchange', syncView)
   }, [])
+
+  useEffect(() => {
+    let active = true
+    const loadData =
+      view === 'admin'
+        ? Promise.all([getAdminMenus(), getAdminOrders()]).then(
+            ([menuData, orderData]) => {
+              if (!active) return
+              setAdminMenus(menuData.menus)
+              setOrders(orderData.orders)
+            },
+          )
+        : getMenus().then((menuData) => {
+            if (active) setMenus(menuData.menus)
+          })
+
+    loadData
+      .catch((error) => {
+        if (active) {
+          setNotice({
+            type: 'error',
+            text: `데이터를 불러오지 못했어요. (${error.message})`,
+          })
+        }
+      })
+      .finally(() => {
+        if (active) setLoadedKey(`${view}:${refreshCount}`)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [view, refreshCount])
 
   function toggleOption(menuId, optionId) {
     setSelectedOptions((current) => {
@@ -204,8 +141,8 @@ function App() {
   }
 
   function addToCart(menu) {
-    const optionIds = [...(selectedOptions[menu.id] ?? [])].sort()
-    const options = OPTIONS.filter((option) => optionIds.includes(option.id))
+    const optionIds = [...(selectedOptions[menu.id] ?? [])].sort((a, b) => a - b)
+    const options = menu.options.filter((option) => optionIds.includes(option.id))
     const unitPrice =
       menu.price + options.reduce((total, option) => total + option.price, 0)
     const cartId = `${menu.id}:${optionIds.join(',')}`
@@ -245,77 +182,53 @@ function App() {
     )
   }
 
-  function submitOrder() {
+  async function submitOrder() {
     if (cart.length === 0) return
 
+    setIsSubmitting(true)
     try {
-      const currentOrders = readOrders()
-
-      const order = {
-        id: createOrderId(),
-        createdAt: getCurrentTimestamp(),
-        status: '주문 접수',
-        items: cart.map((item) => ({
+      const { order } = await submitOrderRequest(
+        cart.map((item) => ({
           menuId: item.menuId,
-          name: item.name,
-          options: item.options.map((option) => ({
-            id: option.id,
-            name: option.name,
-            price: option.price,
-          })),
           quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          totalPrice: item.unitPrice * item.quantity,
+          optionIds: item.options.map((option) => option.id),
         })),
-        totalPrice: cartTotal,
-      }
-
-      const updatedOrders = [...currentOrders, order]
-      localStorage.setItem('cozy-orders', JSON.stringify(updatedOrders))
-      setOrders(updatedOrders)
+      )
       setCart([])
       setSelectedOptions({})
-      setNotice({ type: 'success', text: '주문이 완료되었어요. 감사합니다!' })
+      setNotice({
+        type: 'success',
+        text: `주문이 완료되었어요. 주문 번호 #${order.id} · ${formatPrice(order.totalAmount)}`,
+      })
     } catch (error) {
-      const reason =
-        error instanceof Error ? error.message : '알 수 없는 오류가 발생했어요.'
       setNotice({
         type: 'error',
-        text: `주문을 저장하지 못했어요. 장바구니를 유지했으니 다시 시도해 주세요. (${reason})`,
+        text: `주문을 저장하지 못했어요. 장바구니를 유지했으니 다시 시도해 주세요. (${error.message})`,
       })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  function changeOrderStatus(orderId) {
-    const updatedOrders = orders.map((order) => {
-      if (order.id !== orderId) return order
-      return { ...order, status: getNextOrderStatus(order.status) }
-    })
-
+  async function changeOrderStatus(order) {
     try {
-      localStorage.setItem('cozy-orders', JSON.stringify(updatedOrders))
-      setOrders(updatedOrders)
+      await updateOrderStatus(order.id, getNextOrderStatus(order.status))
+      setRefreshCount((count) => count + 1)
       setNotice({ type: 'success', text: '주문 상태를 변경했어요.' })
     } catch (error) {
-      const reason =
-        error instanceof Error ? error.message : '알 수 없는 오류가 발생했어요.'
-      setNotice({ type: 'error', text: `주문 상태를 저장하지 못했어요. (${reason})` })
+      setRefreshCount((count) => count + 1)
+      setNotice({ type: 'error', text: `주문 상태를 변경하지 못했어요. (${error.message})` })
     }
   }
 
-  function changeInventory(menuId, amount) {
-    const nextQuantity = inventory[menuId] + amount
-    if (nextQuantity < 0) return
-
-    const updatedInventory = { ...inventory, [menuId]: nextQuantity }
+  async function changeInventory(menuId, amount) {
     try {
-      localStorage.setItem('cozy-inventory', JSON.stringify(updatedInventory))
-      setInventory(updatedInventory)
+      await updateMenuStock(menuId, amount)
+      setRefreshCount((count) => count + 1)
       setNotice({ type: 'success', text: '재고 수량을 변경했어요.' })
     } catch (error) {
-      const reason =
-        error instanceof Error ? error.message : '알 수 없는 오류가 발생했어요.'
-      setNotice({ type: 'error', text: `재고를 저장하지 못했어요. (${reason})` })
+      setRefreshCount((count) => count + 1)
+      setNotice({ type: 'error', text: `재고를 변경하지 못했어요. (${error.message})` })
     }
   }
 
@@ -426,12 +339,12 @@ function App() {
                 <h2 id="inventory-title">재고 현황</h2>
               </div>
               <span className="admin-section__meta">
-                {INVENTORY_MENU.length} MENUS
+                {adminMenus.length} MENUS
               </span>
             </div>
             <div className="inventory-grid">
-              {INVENTORY_MENU.map((menu) => {
-                const quantity = inventory[menu.id]
+              {adminMenus.map((menu) => {
+                const quantity = menu.stockQuantity
                 const { key: stockStatus, label: stockLabel } =
                   getStockStatus(quantity)
 
@@ -471,6 +384,7 @@ function App() {
                 )
               })}
             </div>
+            {isLoading && <p className="admin-empty">재고를 불러오는 중이에요.</p>}
           </section>
 
           <section className="admin-section orders-section" aria-labelledby="orders-title">
@@ -479,9 +393,21 @@ function App() {
                 <p className="eyebrow">LIVE ORDER QUEUE</p>
                 <h2 id="orders-title">주문 현황</h2>
               </div>
-              <span className="admin-section__meta">{orders.length} ORDERS</span>
+              <div className="admin-section__actions">
+                <span className="admin-section__meta">{orders.length} ORDERS</span>
+                <button
+                  className="admin-refresh"
+                  type="button"
+                  onClick={() => setRefreshCount((count) => count + 1)}
+                  disabled={isLoading}
+                >
+                  새로고침
+                </button>
+              </div>
             </div>
-            {orders.length === 0 ? (
+            {isLoading && orders.length === 0 ? (
+              <div className="admin-empty">주문 현황을 불러오는 중이에요.</div>
+            ) : orders.length === 0 ? (
               <div className="admin-empty">
                 <span className="admin-empty__icon" aria-hidden="true">☕</span>
                 <strong>아직 접수된 주문이 없어요.</strong>
@@ -489,10 +415,10 @@ function App() {
               </div>
             ) : (
               <ul className="order-list">
-                {[...orders].reverse().map((order) => (
+                {orders.map((order) => (
                   <li className="order-row" key={order.id}>
                     <div className="order-row__date">
-                      <span>{formatOrderDate(order.createdAt)}</span>
+                      <span>{formatOrderDate(order.orderedAt)}</span>
                       <span className="order-row__number">
                         ORDER #{String(order.id).slice(-6)}
                       </span>
@@ -512,7 +438,7 @@ function App() {
                       ))}
                     </div>
                     <strong className="order-row__total">
-                      {formatPrice(order.totalPrice)}
+                      {formatPrice(order.totalAmount)}
                     </strong>
                     <span className={`order-status order-status--${order.status === '제조 중' ? 'making' : order.status === '제조 완료' ? 'complete' : 'received'}`}>
                       {order.status}
@@ -521,7 +447,7 @@ function App() {
                       <button
                         className="button button--primary order-row__action"
                         type="button"
-                        onClick={() => changeOrderStatus(order.id)}
+                        onClick={() => changeOrderStatus(order)}
                       >
                         {order.status === '주문 접수' ? '제조 시작' : '제조 완료'}
                         <span aria-hidden="true">→</span>
@@ -574,18 +500,28 @@ function App() {
               <p className="eyebrow">MADE FOR YOUR MOMENT</p>
               <h2>커피 메뉴</h2>
             </div>
-            <span className="section-heading__meta">01 — 04</span>
+            <span className="section-heading__meta">
+              {String(menus.length).padStart(2, '0')} MENUS
+            </span>
           </div>
 
           <div className="menu-grid">
-            {MENU.map((menu, index) => (
+            {menus.map((menu, index) => (
               <article className="menu-card" key={menu.id}>
                 <div className="menu-card__image">
-                  <CoffeeIllustration art={menu.art} />
+                  {menu.imageUrl ? (
+                    <img className="menu-card__photo" src={menu.imageUrl} alt={menu.name} />
+                  ) : (
+                    <CoffeeIllustration
+                      art={['americano', 'hot', 'latte', 'vanilla'][index % 4]}
+                    />
+                  )}
                   <span className="menu-card__index">
                     {String(index + 1).padStart(2, '0')}
                   </span>
-                  <span className="menu-card__tag">{menu.note}</span>
+                  <span className="menu-card__tag">
+                    {['BEST', 'CLASSIC', 'MILK', 'SWEET'][index % 4]}
+                  </span>
                 </div>
                 <div className="menu-card__body">
                   <div className="menu-card__title-row">
@@ -595,7 +531,7 @@ function App() {
                   <p className="menu-card__description">{menu.description}</p>
                   <fieldset className="option-list">
                     <legend className="sr-only">{menu.name} 추가 옵션</legend>
-                    {OPTIONS.map((option) => (
+                    {menu.options.map((option) => (
                       <label className="option" key={option.id}>
                         <input
                           type="checkbox"
@@ -615,14 +551,19 @@ function App() {
                   <button
                     className="button button--outline menu-card__add"
                     type="button"
+                    disabled={menu.soldOut}
                     onClick={() => addToCart(menu)}
                   >
-                    <span>장바구니 담기</span>
-                    <span aria-hidden="true">+</span>
+                    <span>{menu.soldOut ? '품절' : '장바구니 담기'}</span>
+                    {!menu.soldOut && <span aria-hidden="true">+</span>}
                   </button>
                 </div>
               </article>
             ))}
+            {isLoading && <p className="menu-loading">메뉴를 불러오는 중이에요.</p>}
+            {!isLoading && menus.length === 0 && (
+              <p className="menu-loading">현재 주문할 수 있는 메뉴가 없어요.</p>
+            )}
           </div>
         </section>
 
@@ -694,10 +635,11 @@ function App() {
             <button
               className="button button--primary cart-summary__submit"
               type="button"
-              disabled={cart.length === 0}
+              disabled={cart.length === 0 || isSubmitting}
               onClick={submitOrder}
             >
-              주문하기 <span aria-hidden="true">→</span>
+              {isSubmitting ? '주문 접수 중…' : '주문하기'}{' '}
+              <span aria-hidden="true">→</span>
             </button>
             <span className="cart-summary__secure">결제 없이 주문이 접수됩니다</span>
           </aside>
