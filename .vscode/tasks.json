@@ -13,6 +13,19 @@
 			],
 			"isBackground": true,
 			"problemMatcher": []
+		},
+		{
+			"label": "Express 개발 서버",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"--prefix",
+				"server",
+				"run",
+				"dev"
+			],
+			"isBackground": true,
+			"problemMatcher": []
 		}
 	]
 }
