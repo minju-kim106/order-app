@@ -10,7 +10,7 @@ npm install
 npm run dev
 ```
 
-개발 서버는 `http://localhost:3000`에서 실행됩니다. `PORT`로 포트를, `CORS_ORIGIN`으로 허용할 프런트엔드 출처를 설정할 수 있습니다. 여러 출처는 쉼표로 구분합니다.
+개발 서버는 `http://localhost:3000`에서 실행됩니다. `PORT`로 포트를, `CORS_ORIGIN`으로 허용할 프런트엔드 출처를 설정할 수 있습니다. 여러 출처는 쉼표로 구분합니다. Render에서 프런트엔드를 별도 Static Site로 배포하는 경우 해당 사이트의 URL(예: `https://cozy-ui.onrender.com`)을 백엔드 Web Service의 `CORS_ORIGIN` 환경변수에 설정하세요. 프로토콜과 도메인만 입력하고 끝의 `/`는 제외합니다.
 
 PostgreSQL 서비스가 실행 중이어야 합니다. `.env`에 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`를 설정하세요. 데이터베이스 자체는 미리 생성해야 합니다. 서버는 시작할 때 테이블과 인덱스를 만들고 기본 커피 메뉴 및 옵션을 추가한 뒤 PostgreSQL 연결을 확인합니다. 연결에 실패하면 시작하지 않습니다.
 
