@@ -5,6 +5,9 @@ import pg from "pg";
 
 const { Pool } = pg;
 const port = Number(process.env.DB_PORT ?? 5432);
+const ssl =
+  process.env.DB_SSL === "true" ||
+  process.env.DB_HOST?.endsWith(".render.com") === true;
 
 const requiredConfig = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"];
 
@@ -25,6 +28,7 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
+  ssl,
   connectionTimeoutMillis: 5000,
 });
 
